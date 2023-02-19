@@ -17,9 +17,8 @@ In NN class, we can have multi-class classification, but we will not cover it he
 
 import numpy as np
 import pandas as pd
-from scipy.special import expit
+import scipy.special as sp
 import matplotlib.pyplot as plt
-
 
 
 """
@@ -35,7 +34,7 @@ print(df.columns)
 data = df.to_numpy()
 np.random.shuffle(data)  # why???
 
-X, Y = data[:, :-1], data[:, -1].astype(np.int32)
+X, Y = data[:, :-1], data[:, -1].round()
 X = np.c_[np.ones(data.shape[0]), X]  # should we be adding a column of 1s here?
 N, D = X.shape
 print(f'(N, D) = {N, D}')
@@ -63,7 +62,7 @@ for col in (1, 2):
     s = Xtrain[:, col].std()
 
     Xtrain[:, col] = (Xtrain[:, col]-m)/s
-    Xtest[:, col] = (Xtest[:, col]-m)/s  # why are we dividing by m and s of the Xtrain here?
+    Xtest[:, col] = (Xtest[:, col]-m)/s  # we divide by m and s of the Xtrain here because Xtest might be just 1 sample
 
 # for binary classification, we will just get the data for which the output is either 0 or 1 (the first two outcomes)
 Xbintrain = Xtrain[Ytrain <= 1]  # slicing based on Boolean input - nice!
@@ -81,13 +80,52 @@ We haven't trained the model yet, so the predictions are going to use random wei
 w = np.random.randn(Xbintrain.shape[1])
 
 def forward(X, w):
-    return expit(X.dot(w))
+    return sp.expit(X.dot(w))
 
-PofYgivenX = forward(Xbintrain, w)
-print(PofYgivenX.shape)
+pYbintrain = forward(Xbintrain, w)
+print(pYbintrain.shape)
 
-predictions = PofYgivenX.round().astype(np.int32)
+classification_rate = np.mean(Ybintrain == pYbintrain.round())  # mean(array of True or False) is like mean(0s or 1s)
 # predictions = [1 if ii >= 0.5 else 0 if ii <= 0.5 else ii for ii in PofYgivenX]  # same thing
+print('Classification rate (train, random weights):', classification_rate)
 
-classification_rate = np.mean(Ybintrain == predictions)  # mean(array of True or False) is like mean(0s or 1s)
-print('Score:', classification_rate)
+def cross_entropy(t, y):  # (targets, predictions)
+    E = np.mean(-t*np.log(y) - (1-t)*np.log(1-y))  # mean, not sum, because we want this to be independent of N
+    return E
+
+# Now do gradient descent to improve the randomly initialised w
+entropies_train = []
+entropies_test = []
+eta = 0.001
+steps = 10**4
+# l2 = 0.1  # l2 regularisation
+
+for i in range(steps):
+    pYbintrain = sp.expit(np.dot(Xbintrain, w))
+    pYbintest = sp.expit(np.dot(Xbintest, w))
+
+    entropies_train.append(cross_entropy(Ybintrain, pYbintrain))
+    entropies_test.append(cross_entropy(Ybintest, pYbintest))
+
+    w = w - eta*np.matmul(Xbintrain.T, pYbintrain-Ybintrain)
+    # w = w - eta*(np.matmul(Xbintrain.T, pYbintrain-Ybintrain) + l2*w)  # now the weights are much smaller
+
+classification_rate_train = np.mean(Ybintrain == pYbintrain.round())
+classification_rate_test = np.mean(Ybintest == pYbintest.round())
+
+print('After gradient descent'.upper())
+print(f'Train cross-entropy: {entropies_train[-1]}')
+print(f'Test cross-entropy: {entropies_test[-1]}')
+
+print('Classification rate (train):', classification_rate_train)
+print('Classification rate (test):', classification_rate_test)
+
+print(f'w: {w}')  # resembles [0, 4, 4] from Naive Bayes - any multiply of this w represents the same straight line!
+
+plt.plot(range(steps), entropies_train, label='Train set')
+plt.plot(range(steps), entropies_test, label='Test set')
+plt.xlabel('Iteration')
+plt.ylabel('Cross-entropy')
+plt.title('Cross-entropy in gradient descent')
+plt.legend()
+plt.show()
